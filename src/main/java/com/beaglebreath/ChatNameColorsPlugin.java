@@ -128,7 +128,10 @@ public class ChatNameColorsPlugin extends Plugin
 
 	private UserColor getOrCreateUserColor(String username) {
 		boolean isThisPlayer = username.equals(client.getLocalPlayer().getName());
-		if (isThisPlayer && config.yourNameColor() != null){
+		if (isThisPlayer) {
+			if (!config.colorYourName() || config.yourNameColor() == null) {
+				return null;
+			}
 			return new UserColor(
 					config.yourNameColor(),
 					username,

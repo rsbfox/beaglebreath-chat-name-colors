@@ -15,6 +15,13 @@ public interface ChatNameColorsConfig extends Config
 	String YOUR_NAME_COLOR_KEY = "yournamecolor";
 
 	@ConfigItem(
+			keyName = "coloryourname",
+			name = "Color Your Name",
+			description = "Enable a custom color for your username"
+	)
+	default boolean colorYourName() { return true; }
+
+	@ConfigItem(
 		keyName = YOUR_NAME_COLOR_KEY,
 		name = "Your Name Color",
 		description = "The color used to highlight your name"
