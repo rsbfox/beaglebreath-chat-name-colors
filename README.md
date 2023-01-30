@@ -3,7 +3,7 @@
 Differentiate players in your chat with custom colors!
 
 # Recolor a User
-Simply hold down "Shift" and righ click a user name in chat or in your Friends list!
+Simply hold down "Shift" and right click a username in chat or in your Friends list!
 
 ![Set Color through menu](./screenshots/set-color.png)
 
