@@ -104,13 +104,13 @@ public class ChatNameColorsPlugin extends Plugin
 	private void writeChatColors()
 	{
 		// Based on https://github.com/runelite/runelite/blob/a6f1a7794979b016106a23b8a9ca3a18ad6e36d7/runelite-client/src/main/java/net/runelite/client/chat/ChatMessageManager.java#L93
-		final String[] stringStack = client.getStringStack();
-		final int size = client.getStringStackSize();
+		final Object[] objectStack = client.getObjectStack();
+		final int size = client.getObjectStackSize();
 		if (size < 3) {
 			log.error("Attempted to write chat colors with a small stack: " + size);
 			return;
 		}
-		final String username = stringStack[size - 3];
+		final String username = (String) objectStack[size - 3];
 		if (username == null || username.isEmpty()) {
 			// Only coloring user
 			return;
@@ -123,7 +123,7 @@ public class ChatNameColorsPlugin extends Plugin
 			// Set to default
 			return;
 		}
-		stringStack[size - 3] = ColorUtil.wrapWithColorTag(username, userColor.getColor());
+		objectStack[size - 3] = ColorUtil.wrapWithColorTag(username, userColor.getColor());
 	}
 
 	private UserColor getOrCreateUserColor(String username) {
