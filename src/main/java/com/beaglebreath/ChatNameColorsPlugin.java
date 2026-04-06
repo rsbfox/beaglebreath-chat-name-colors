@@ -85,6 +85,7 @@ public class ChatNameColorsPlugin extends Plugin
 		userToColorMap = new HashMap<>();
 		migrateUserColors();
 		loadUserColors();
+		rebuildFriendsList();
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
 			pendingMessage = "Chat Name Colors started!";
@@ -96,6 +97,7 @@ public class ChatNameColorsPlugin extends Plugin
 	{
 		// Persist cache to config before shutting down
 		saveUserColors();
+		rebuildFriendsList();
 		if (client.getGameState() == GameState.LOGGED_IN)
 		{
 			clientThread.invokeLater(() -> client.addChatMessage(
