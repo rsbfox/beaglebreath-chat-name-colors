@@ -7,10 +7,13 @@ import com.google.gson.JsonElement;
 import com.google.inject.Provides;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
+import net.runelite.api.Menu;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
-import net.runelite.api.events.MenuEntryAdded;
+import net.runelite.api.events.MenuOpened;
 import net.runelite.api.events.ScriptCallbackEvent;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.EventBus;
@@ -124,21 +127,44 @@ public class ChatNameColorsPlugin extends Plugin
 			return;
 		}
 
-		if (configChanged.getKey().equals(ChatNameColorsConfig.YOUR_NAME_COLOR_KEY)
-			|| configChanged.getKey().equals(ChatNameColorsConfig.COLOR_YOUR_NAME_KEY)
-			|| configChanged.getKey().equals(ChatNameColorsConfig.COLOR_ENTIRE_MESSAGE_KEY))
+		switch (configChanged.getKey())
 		{
-			pendingMessage = "Chat Name Colors reloaded!";
+			case ChatNameColorsConfig.YOUR_NAME_COLOR_KEY:
+			case ChatNameColorsConfig.COLOR_YOUR_NAME_KEY:
+			case ChatNameColorsConfig.COLOR_ENTIRE_MESSAGE_KEY:
+				pendingMessage = "Chat Name Colors reloaded!";
+				break;
+			case ChatNameColorsConfig.RANDOMLY_GENERATE_KEY:
+				if (!config.randomlyGenerate())
+				{
+					userToColorMap.entrySet().removeIf(e -> !e.getValue().isManuallySet());
+					saveUserColors();
+				}
+				pendingMessage = "Chat Name Colors reloaded!";
+				break;
+			case ChatNameColorsConfig.RECOLOR_FRIENDS_KEY:
+				rebuildFriendsList();
+				break;
 		}
-		else if (configChanged.getKey().equals(ChatNameColorsConfig.RANDOMLY_GENERATE_KEY))
+	}
+
+	private void rebuildFriendsList()
+	{
+		clientThread.invokeLater(() ->
 		{
-			if (!config.randomlyGenerate())
-			{
-				userToColorMap.entrySet().removeIf(e -> !e.getValue().isManuallySet());
-				saveUserColors();
-			}
-			pendingMessage = "Chat Name Colors reloaded!";
-		}
+			client.runScript(
+				ScriptID.FRIENDS_UPDATE,
+				InterfaceID.Friends.LIST_CONTAINER,
+				InterfaceID.Friends.SORT_NAME,
+				InterfaceID.Friends.SORT_RECENT,
+				InterfaceID.Friends.SORT_WORLD,
+				InterfaceID.Friends.SORT_LEGACY,
+				InterfaceID.Friends.LIST,
+				InterfaceID.Friends.SCROLLBAR,
+				InterfaceID.Friends.LOADING,
+				InterfaceID.Friends.TOOLTIP
+			);
+		});
 	}
 
 	@Override
@@ -216,6 +242,11 @@ public class ChatNameColorsPlugin extends Plugin
 		return ColorUtil.wrapWithColorTag(patched, color);
 	}
 
+	private Color randomColor()
+	{
+		return new Color(random.nextFloat(), random.nextFloat(), random.nextFloat());
+	}
+
 	private UserColor getOrCreateUserColor(String username)
 	{
 		boolean isThisPlayer = username.equals(client.getLocalPlayer().getName());
@@ -241,12 +272,7 @@ public class ChatNameColorsPlugin extends Plugin
 			return null;
 		}
 
-		Color userColor = new Color(
-			random.nextFloat(),
-			random.nextFloat(),
-			random.nextFloat()
-		);
-		UserColor newUserColor = new UserColor(userColor, System.currentTimeMillis(), false);
+		UserColor newUserColor = new UserColor(randomColor(), System.currentTimeMillis(), false);
 		userToColorMap.put(username, newUserColor);
 		return newUserColor;
 	}
@@ -254,65 +280,153 @@ public class ChatNameColorsPlugin extends Plugin
 	@Subscribe
 	public void onScriptCallbackEvent(ScriptCallbackEvent scriptCallbackEvent)
 	{
-		final String eventName = scriptCallbackEvent.getEventName();
-		if ("chatMessageBuilding".equals(eventName))
+		switch (scriptCallbackEvent.getEventName())
 		{
-			writeChatColors();
+			case "chatMessageBuilding":
+				writeChatColors();
+				break;
+			case "friendsChatSetText":
+				if (!config.recolorFriends())
+				{
+					break;
+				}
+				Object[] objectStack = client.getObjectStack();
+				int objectStackSize = client.getObjectStackSize();
+				final String rsn = (String) objectStack[objectStackSize - 1];
+				UserColor userColor = userToColorMap.get(Text.removeTags(rsn));
+				if (userColor != null)
+				{
+					objectStack[objectStackSize - 1] = ColorUtil.wrapWithColorTag(rsn, userColor.getColor());
+				}
+				break;
 		}
 	}
 
 	@Subscribe
-	public void onMenuEntryAdded(MenuEntryAdded event)
+	public void onMenuOpened(MenuOpened event)
 	{
-		final boolean hotKeyPressed = client.isKeyPressed(KeyCode.KC_SHIFT);
-		// Check to see if we shift clicked a message
-		if (hotKeyPressed &&
-			(
-				event.getOption().equals(MESSAGE_OPTION) ||
-					event.getOption().equals(ADD_FRIEND_OPTION)
-			)
-		)
+		if (!client.isKeyPressed(KeyCode.KC_SHIFT))
 		{
-			MenuEntry menuEntry = event.getMenuEntry();
-			String target = Text.removeTags(menuEntry.getTarget());
+			return;
+		}
 
-			// Short circuit
-			boolean alreadyExists = Arrays.stream(client.getMenuEntries()).anyMatch((me -> me.getOption().equals(SET_COLOR_OPTION)));
-			if (alreadyExists)
+		final MenuEntry[] entries = event.getMenuEntries();
+		for (int idx = entries.length - 1; idx >= 0; --idx)
+		{
+			final MenuEntry entry = entries[idx];
+			if (!entry.getOption().equals(MESSAGE_OPTION) && !entry.getOption().equals(ADD_FRIEND_OPTION))
 			{
-				return;
+				continue;
 			}
-			if (Strings.isNullOrEmpty(target))
+
+			final String username = Text.removeTags(entry.getTarget());
+			if (Strings.isNullOrEmpty(username))
 			{
-				log.error("Error detecting player for menu");
-				return;
+				continue;
 			}
-			client.createMenuEntry(-1)
+
+			final boolean isFriendsList = entry.getWidget() != null
+				&& WidgetUtil.componentToInterface(entry.getWidget().getId()) == InterfaceID.FRIENDS;
+
+			final UserColor existingColor = userToColorMap.get(username);
+
+			final MenuEntry parent = client.createMenuEntry(idx)
 				.setOption(SET_COLOR_OPTION)
-				.setTarget(event.getTarget())
+				.setTarget(entry.getTarget())
+				.setType(MenuAction.RUNELITE);
+			final Menu submenu = parent.createSubMenu();
+
+			// Pick — opens color picker, always sets manual
+			submenu.createMenuEntry(0)
+				.setOption("Pick")
 				.setType(MenuAction.RUNELITE)
 				.onClick(e -> SwingUtilities.invokeLater(() ->
 				{
-					Color colorToStart = userToColorMap.containsKey(target)
-						? userToColorMap.get(target).getColor()
-						: Color.WHITE;
-
+					Color colorToStart = existingColor != null ? existingColor.getColor() : Color.WHITE;
 					RuneliteColorPicker colorPicker = colorPickerManager.create(
 						SwingUtilities.windowForComponent((Panel) client),
 						colorToStart, "Set Color for User", false);
 					colorPicker.setOnClose(c ->
 					{
-						setUserColor(target, c);
-						clientThread.invokeLater(this::messageUpdate);
+						setUserColor(username, c);
+						pendingMessage = "Color set for " + username;
+						if (isFriendsList)
+						{
+							rebuildFriendsList();
+						}
 					});
 					colorPicker.setVisible(true);
 				}));
-		}
-	}
 
-	private void messageUpdate()
-	{
-		client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Updated user's color", null);
+			// Random — generates new random color
+			// If randomlyGenerate is off, treat as manual so it persists
+			submenu.createMenuEntry(0)
+				.setOption("Random")
+				.setType(MenuAction.RUNELITE)
+				.onClick(e ->
+				{
+					boolean manual = existingColor != null ? existingColor.isManuallySet() : !config.randomlyGenerate();
+					UserColor newColor = new UserColor(randomColor(), System.currentTimeMillis(), manual);
+					userToColorMap.put(username, newColor);
+					if (manual)
+					{
+						saveUserColors();
+					}
+					pendingMessage = "Color randomized for " + username;
+					if (isFriendsList)
+					{
+						rebuildFriendsList();
+					}
+				});
+
+			// Conditional third option
+			if (existingColor != null)
+			{
+				if (!existingColor.isManuallySet() && config.randomlyGenerate())
+				{
+					// Save — promotes random to manual
+					submenu.createMenuEntry(0)
+						.setOption("Save")
+						.setType(MenuAction.RUNELITE)
+						.onClick(e ->
+						{
+							UserColor saved = new UserColor(existingColor.getColor(), System.currentTimeMillis(), true);
+							userToColorMap.put(username, saved);
+							saveUserColors();
+							pendingMessage = "Color saved for " + username;
+							if (isFriendsList)
+							{
+								rebuildFriendsList();
+							}
+						});
+				}
+				else if (existingColor.isManuallySet())
+				{
+					// Reset — demotes manual back to random or removes
+					submenu.createMenuEntry(0)
+						.setOption("Reset")
+						.setType(MenuAction.RUNELITE)
+						.onClick(e ->
+						{
+							if (config.randomlyGenerate())
+							{
+								UserColor reset = new UserColor(randomColor(), System.currentTimeMillis(), false);
+								userToColorMap.put(username, reset);
+							}
+							else
+							{
+								userToColorMap.remove(username);
+							}
+							saveUserColors();
+							pendingMessage = "Color reset for " + username;
+							if (isFriendsList)
+							{
+								rebuildFriendsList();
+							}
+						});
+				}
+			}
+		}
 	}
 
 	private void setUserColor(String username, Color color)

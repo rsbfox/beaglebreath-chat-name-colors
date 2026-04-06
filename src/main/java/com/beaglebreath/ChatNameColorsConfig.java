@@ -16,6 +16,7 @@ public interface ChatNameColorsConfig extends Config
 	String COLOR_YOUR_NAME_KEY = "coloryourname";
 	String YOUR_NAME_COLOR_KEY = "yournamecolor";
 	String COLOR_ENTIRE_MESSAGE_KEY = "colorentiremessage";
+	String RECOLOR_FRIENDS_KEY = "recolorfriends";
 
 	@ConfigItem(
 		keyName = RANDOMLY_GENERATE_KEY,
@@ -51,4 +52,12 @@ public interface ChatNameColorsConfig extends Config
 		position = 3
 	)
 	default boolean colorEntireMessage() { return false; }
+
+	@ConfigItem(
+		keyName = RECOLOR_FRIENDS_KEY,
+		name = "Recolor Friends List",
+		description = "Recolor names in your friends list if they have a color set",
+		position = 4
+	)
+	default boolean recolorFriends() { return false; }
 }
