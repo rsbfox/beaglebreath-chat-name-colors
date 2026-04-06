@@ -15,6 +15,7 @@ public interface ChatNameColorsConfig extends Config
 	String RANDOMLY_GENERATE_KEY = "randomlygenerate";
 	String COLOR_YOUR_NAME_KEY = "coloryourname";
 	String YOUR_NAME_COLOR_KEY = "yournamecolor";
+	String COLOR_ENTIRE_MESSAGE_KEY = "colorentiremessage";
 
 	@ConfigItem(
 		keyName = RANDOMLY_GENERATE_KEY,
@@ -42,4 +43,12 @@ public interface ChatNameColorsConfig extends Config
 	{
 		return Color.WHITE;
 	}
+
+	@ConfigItem(
+		keyName = COLOR_ENTIRE_MESSAGE_KEY,
+		name = "Color Entire Message",
+		description = "Color the entire chat message instead of only the username",
+		position = 3
+	)
+	default boolean colorEntireMessage() { return false; }
 }

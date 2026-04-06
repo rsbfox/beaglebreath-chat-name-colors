@@ -125,7 +125,8 @@ public class ChatNameColorsPlugin extends Plugin
 		}
 
 		if (configChanged.getKey().equals(ChatNameColorsConfig.YOUR_NAME_COLOR_KEY)
-			|| configChanged.getKey().equals(ChatNameColorsConfig.COLOR_YOUR_NAME_KEY))
+			|| configChanged.getKey().equals(ChatNameColorsConfig.COLOR_YOUR_NAME_KEY)
+			|| configChanged.getKey().equals(ChatNameColorsConfig.COLOR_ENTIRE_MESSAGE_KEY))
 		{
 			pendingMessage = "Chat Name Colors reloaded!";
 		}
@@ -193,6 +194,26 @@ public class ChatNameColorsPlugin extends Plugin
 			return;
 		}
 		objectStack[size - 3] = ColorUtil.wrapWithColorTag(username, userColor.getColor());
+		if (config.colorEntireMessage())
+		{
+			final String message = (String) objectStack[size - 2];
+			objectStack[size - 2] = colorMessage(message, userColor.getColor());
+		}
+	}
+
+	private String colorMessage(String message, Color color)
+	{
+		if (Strings.isNullOrEmpty(message) || color == null)
+		{
+			return message;
+		}
+
+		// If the message contains </col>, it would end our outer color early.
+		// Re-open our desired color after every close tag.
+		final String reopen = "<col=" + ColorUtil.toHexColor(color).substring(1) + ">";
+		final String patched = message.replace("</col>", "</col>" + reopen);
+
+		return ColorUtil.wrapWithColorTag(patched, color);
 	}
 
 	private UserColor getOrCreateUserColor(String username)
