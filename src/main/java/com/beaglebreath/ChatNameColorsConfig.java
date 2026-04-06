@@ -12,29 +12,34 @@ public interface ChatNameColorsConfig extends Config
 
 	String GROUP = "chatnamecolors";
 
+	String RANDOMLY_GENERATE_KEY = "randomlygenerate";
+	String COLOR_YOUR_NAME_KEY = "coloryourname";
 	String YOUR_NAME_COLOR_KEY = "yournamecolor";
 
 	@ConfigItem(
-			keyName = "coloryourname",
-			name = "Color Your Name",
-			description = "Enable a custom color for your username"
+		keyName = RANDOMLY_GENERATE_KEY,
+		name = "Unspecified Users",
+		description = "Generate random colors for unspecified users",
+		position = 0
+	)
+	default boolean randomlyGenerate() { return true; }
+
+	@ConfigItem(
+		keyName = COLOR_YOUR_NAME_KEY,
+		name = "Color Your Name",
+		description = "Enable a custom color for your username",
+		position = 1
 	)
 	default boolean colorYourName() { return true; }
 
 	@ConfigItem(
 		keyName = YOUR_NAME_COLOR_KEY,
 		name = "Your Name Color",
-		description = "The color used to highlight your name"
+		description = "The color used to highlight your name",
+		position = 2
 	)
 	default Color yourNameColor()
 	{
 		return Color.WHITE;
 	}
-
-	@ConfigItem(
-		keyName = "randomlygenerate",
-		name = "Unspecified Users",
-		description = "Generate random colors for unspecified users"
-	)
-	default boolean randomlyGenerate() { return true; }
 }
