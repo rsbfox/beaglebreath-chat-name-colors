@@ -9,14 +9,12 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.Menu;
 import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOpened;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.WidgetUtil;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
-import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
@@ -52,7 +50,6 @@ public class ChatNameColorsPlugin extends Plugin
 	private final Random random = new Random();
 
 	private boolean loggedIn = false;
-	private volatile String pendingMessage = null;
 
 	@Inject
 	private Client client;
@@ -70,9 +67,6 @@ public class ChatNameColorsPlugin extends Plugin
 	private ColorPickerManager colorPickerManager;
 
 	@Inject
-	private EventBus eventBus;
-
-	@Inject
 	private Gson gson;
 
 	private Map<String, UserColor> userToColorMap;
@@ -85,11 +79,11 @@ public class ChatNameColorsPlugin extends Plugin
 		userToColorMap = new HashMap<>();
 		migrateUserColors();
 		loadUserColors();
-		rebuildFriendsList();
-		if (client.getGameState() == GameState.LOGGED_IN)
+		if (config.recolorFriends() && client.getGameState() == GameState.LOGGED_IN)
 		{
-			pendingMessage = "Chat Name Colors started!";
+			rebuildFriendsList();
 		}
+		refreshChat();
 	}
 
 	@Override
@@ -97,12 +91,12 @@ public class ChatNameColorsPlugin extends Plugin
 	{
 		// Persist cache to config before shutting down
 		saveUserColors();
-		rebuildFriendsList();
-		if (client.getGameState() == GameState.LOGGED_IN)
+		userToColorMap.clear();
+		if (config.recolorFriends() && client.getGameState() == GameState.LOGGED_IN)
 		{
-			clientThread.invokeLater(() -> client.addChatMessage(
-				ChatMessageType.GAMEMESSAGE, "", "Chat Name Colors stopped!", null));
+			rebuildFriendsList();
 		}
+		refreshChat();
 		log.info("ChatNameColors stopped!");
 	}
 
@@ -134,7 +128,7 @@ public class ChatNameColorsPlugin extends Plugin
 			case ChatNameColorsConfig.YOUR_NAME_COLOR_KEY:
 			case ChatNameColorsConfig.COLOR_YOUR_NAME_KEY:
 			case ChatNameColorsConfig.COLOR_ENTIRE_MESSAGE_KEY:
-				pendingMessage = "Chat Name Colors reloaded!";
+				refreshChat();
 				break;
 			case ChatNameColorsConfig.RANDOMLY_GENERATE_KEY:
 				if (!config.randomlyGenerate())
@@ -142,7 +136,7 @@ public class ChatNameColorsPlugin extends Plugin
 					userToColorMap.entrySet().removeIf(e -> !e.getValue().isManuallySet());
 					saveUserColors();
 				}
-				pendingMessage = "Chat Name Colors reloaded!";
+				refreshChat();
 				break;
 			case ChatNameColorsConfig.RECOLOR_FRIENDS_KEY:
 				rebuildFriendsList();
@@ -150,10 +144,15 @@ public class ChatNameColorsPlugin extends Plugin
 		}
 	}
 
+	// invokeLater prevents colors from occasionally getting stuck
+	private void refreshChat()
+	{
+		clientThread.invokeLater(client::refreshChat);
+	}
+
 	private void rebuildFriendsList()
 	{
 		clientThread.invokeLater(() ->
-		{
 			client.runScript(
 				ScriptID.FRIENDS_UPDATE,
 				InterfaceID.Friends.LIST_CONTAINER,
@@ -165,8 +164,7 @@ public class ChatNameColorsPlugin extends Plugin
 				InterfaceID.Friends.SCROLLBAR,
 				InterfaceID.Friends.LOADING,
 				InterfaceID.Friends.TOOLTIP
-			);
-		});
+			));
 	}
 
 	@Override
@@ -176,19 +174,8 @@ public class ChatNameColorsPlugin extends Plugin
 		configManager.unsetConfiguration(ChatNameColorsConfig.GROUP, MANUAL_COLORS_KEY);
 		configManager.unsetConfiguration(ChatNameColorsConfig.GROUP, RANDOM_COLORS_KEY);
 		super.resetConfiguration();
-		pendingMessage = "Chat Name Colors config reset!";
+		refreshChat();
 		log.info("ChatNameColors reset!");
-	}
-
-	@Subscribe
-	public void onGameTick(GameTick event)
-	{
-		if (pendingMessage != null)
-		{
-			// Triggering a message will cause a rewrite for chat colors
-			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", pendingMessage, null);
-			pendingMessage = null;
-		}
 	}
 
 	@Provides
@@ -204,7 +191,7 @@ public class ChatNameColorsPlugin extends Plugin
 		final int size = client.getObjectStackSize();
 		if (size < 3)
 		{
-			log.error("Attempted to write chat colors with a small stack: " + size);
+			log.error("Attempted to write chat colors with a small stack: {}", size);
 			return;
 		}
 		final String username = (String) objectStack[size - 3];
@@ -332,7 +319,7 @@ public class ChatNameColorsPlugin extends Plugin
 
 			final UserColor existingColor = userToColorMap.get(username);
 
-			final MenuEntry parent = client.createMenuEntry(idx)
+			final MenuEntry parent = client.getMenu().createMenuEntry(idx)
 				.setOption(SET_COLOR_OPTION)
 				.setTarget(entry.getTarget())
 				.setType(MenuAction.RUNELITE);
@@ -351,7 +338,7 @@ public class ChatNameColorsPlugin extends Plugin
 					colorPicker.setOnClose(c ->
 					{
 						setUserColor(username, c);
-						pendingMessage = "Color set for " + username;
+						refreshChat();
 						if (isFriendsList)
 						{
 							rebuildFriendsList();
@@ -374,7 +361,7 @@ public class ChatNameColorsPlugin extends Plugin
 					{
 						saveUserColors();
 					}
-					pendingMessage = "Color randomized for " + username;
+					refreshChat();
 					if (isFriendsList)
 					{
 						rebuildFriendsList();
@@ -395,11 +382,6 @@ public class ChatNameColorsPlugin extends Plugin
 							UserColor saved = new UserColor(existingColor.getColor(), System.currentTimeMillis(), true);
 							userToColorMap.put(username, saved);
 							saveUserColors();
-							pendingMessage = "Color saved for " + username;
-							if (isFriendsList)
-							{
-								rebuildFriendsList();
-							}
 						});
 				}
 				else if (existingColor.isManuallySet())
@@ -420,7 +402,7 @@ public class ChatNameColorsPlugin extends Plugin
 								userToColorMap.remove(username);
 							}
 							saveUserColors();
-							pendingMessage = "Color reset for " + username;
+							refreshChat();
 							if (isFriendsList)
 							{
 								rebuildFriendsList();
@@ -520,6 +502,11 @@ public class ChatNameColorsPlugin extends Plugin
 	// Migrates legacy config entries
 	private void migrateUserColors()
 	{
+		String migrated = configManager.getConfiguration(ChatNameColorsConfig.GROUP, "migrated");
+		if ("1".equals(migrated))
+		{
+			return;
+		}
 		final String LEGACY_CONFIG_GROUP = "chatNameColors";
 		final String LEGACY_USER_PREFIX = "USER~";
 		final String legacyKeyPrefix = LEGACY_CONFIG_GROUP + "." + LEGACY_USER_PREFIX;
@@ -532,11 +519,12 @@ public class ChatNameColorsPlugin extends Plugin
 
 		if (legacyKeys.isEmpty())
 		{
+			configManager.setConfiguration(ChatNameColorsConfig.GROUP, "migrated", "1");
 			return;
 		}
 
 		log.info("Migrating {} legacy color entries", legacyKeys.size());
-		int migrated = 0, failed = 0;
+		int successful = 0, failed = 0;
 
 		for (String key : legacyKeys)
 		{
@@ -553,7 +541,7 @@ public class ChatNameColorsPlugin extends Plugin
 				UserColor userColor = deserializeUserColor(json, true);
 				userToColorMap.put(username, userColor);
 				configManager.unsetConfiguration(LEGACY_CONFIG_GROUP, key);
-				migrated++;
+				successful++;
 			}
 			catch (Exception e)
 			{
@@ -564,7 +552,8 @@ public class ChatNameColorsPlugin extends Plugin
 
 		saveUserColors();
 
-		log.info("Color migration complete: {} migrated, {} failed", migrated, failed);
+		log.info("Color migration complete: {} migrated, {} failed", successful, failed);
+		configManager.setConfiguration(ChatNameColorsConfig.GROUP, "migrated", "1");
 	}
 
 	private UserColor deserializeUserColor(String json, boolean manuallySet)
