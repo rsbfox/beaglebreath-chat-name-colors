@@ -238,8 +238,7 @@ public class ChatNameColorsPlugin extends Plugin
 
 	private UserColor getOrCreateUserColor(String username)
 	{
-		boolean isThisPlayer = username.equals(client.getLocalPlayer().getName());
-		if (isThisPlayer)
+		if (client.getLocalPlayer() != null && Text.toJagexName(username).equals(client.getLocalPlayer().getName()))
 		{
 			if (!config.colorYourName() || config.yourNameColor() == null)
 			{
